@@ -54,11 +54,11 @@ class LastFM:
                 time.sleep(wait)
             self._last_call = time.monotonic()
 
-    def call(self, method: str, **params) -> dict:
+    def call(self, method: str, use_cache: bool = True, **params) -> dict:
         method = method.lower()
         params = {k: str(v) for k, v in params.items() if v is not None}
         cache_key = method + "?" + json.dumps(params, sort_keys=True)
-        cached = self.store.cache_get(cache_key)
+        cached = self.store.cache_get(cache_key) if use_cache else None
         if cached is not None:
             return cached
 
@@ -83,7 +83,8 @@ class LastFM:
             elif error:
                 raise LastFMError(f"{method}: {data.get('message')}")
             break
-        self.store.cache_set(cache_key, data, TTL.get(method, DAY))
+        if use_cache:
+            self.store.cache_set(cache_key, data, TTL.get(method, DAY))
         return data
 
     # --- user -----------------------------------------------------------
@@ -99,6 +100,19 @@ class LastFM:
     def user_recent_tracks(self, user: str, limit: int = 200) -> list[dict]:
         data = self.call("user.getRecentTracks", user=user, limit=limit)
         return _as_list(data.get("recenttracks", {}).get("track"))
+
+    def user_scrobbles(self, user: str, start: int, end: int, max_pages: int = 100) -> list[dict]:
+        """Every scrobble between two UNIX timestamps (no cache: the answer changes as you listen)."""
+        tracks: list[dict] = []
+        page, pages = 1, 1
+        while page <= min(pages, max_pages):
+            data = self.call("user.getRecentTracks", use_cache=False, user=user, limit=200, page=page,
+                             **{"from": start, "to": end})
+            recent = data.get("recenttracks", {})
+            pages = int(recent.get("@attr", {}).get("totalPages") or 0)
+            tracks += [t for t in _as_list(recent.get("track")) if t.get("date")]  # skip "now playing"
+            page += 1
+        return tracks
 
     def track_user_playcount(self, user: str, artist: str, title: str) -> int | None:
         data = self.call("track.getInfo", artist=artist, track=title, username=user)
