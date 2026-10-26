@@ -5,7 +5,7 @@ import time
 
 
 class Store:
-    """SQLite store for the Last.fm response cache and generated playlists."""
+    """SQLite store for the API response cache, generated playlists and small settings (kv)."""
 
     def __init__(self, path: str):
         self._conn = sqlite3.connect(path, check_same_thread=False)
@@ -24,6 +24,10 @@ class Store:
                     created_at REAL NOT NULL,
                     data TEXT NOT NULL,
                     PRIMARY KEY (kind, period)
+                );
+                CREATE TABLE IF NOT EXISTS kv (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
                 );
                 """
             )
@@ -58,4 +62,18 @@ class Store:
                 "INSERT OR REPLACE INTO playlists (kind, period, created_at, data) VALUES (?, ?, ?, ?)",
                 (kind, period, time.time(), json.dumps(data)),
             )
+            self._conn.commit()
+
+    def kv_get(self, key: str):
+        with self._lock:
+            row = self._conn.execute("SELECT value FROM kv WHERE key = ?", (key,)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def kv_set(self, key: str, value) -> None:
+        """Store a JSON value; None deletes the key."""
+        with self._lock:
+            if value is None:
+                self._conn.execute("DELETE FROM kv WHERE key = ?", (key,))
+            else:
+                self._conn.execute("INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)", (key, json.dumps(value)))
             self._conn.commit()
