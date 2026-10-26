@@ -32,6 +32,21 @@ def test_profile_excludes_podcasts(reco):
     assert all(norm(t["artist"]) != "some podcast" for t in profile.top_tracks)
 
 
+def test_profile_uses_at_least_a_month_of_listening(reco):
+    periods = []
+    for name in ("user_top_artists", "user_top_tracks"):
+        original = getattr(reco.fm, name)
+
+        def spy(user, period="overall", *args, _original=original, **kwargs):
+            periods.append(period)
+            return _original(user, period, *args, **kwargs)
+
+        setattr(reco.fm, name, spy)
+    reco.profile()
+    assert "7day" not in periods
+    assert {"1month", "3month", "6month", "overall"} <= set(periods)
+
+
 def test_weekly_only_unheard_and_one_per_artist(reco):
     weekly = reco.weekly()
     assert len(weekly.tracks) == WEEKLY_SIZE

@@ -11,7 +11,8 @@ mais à partir de ton historique **Last.fm**. Elle produit des listes de titres 
 | **Daily Mix 1 à 6** | Tes artistes regroupés par genre dominant (drum and bass, house, metal…). ~70 % de titres que tu connais, ~30 % de nouveautés d'artistes proches du même genre. | chaque jour |
 | **Running / Focus / Chill** | Titres de ta bibliothèque dont les artistes collent à l'humeur (tags Last.fm), plus des nouveautés d'artistes proches et des charts de tags filtrés selon tes goûts. ~50/50. | chaque jour |
 
-Le profil de goûts combine tes top artistes sur 7 jours, 1 mois, 6 mois et depuis toujours (le récent pèse plus),
+Le profil de goûts combine tes top artistes et titres sur 1 mois, 3 mois, 6 mois et depuis toujours (le plus récent pèse plus,
+mais jamais moins d'un mois d'écoute),
 leurs tags, et les ~5000 titres les plus écoutés de ta bibliothèque pour savoir ce que tu connais déjà.
 Les podcasts (HugoDécrypte, WVFRM…) sont détectés et ignorés.
 
