@@ -62,6 +62,20 @@ def create_app(recommender: Recommender | None = None) -> FastAPI:
         return PlainTextResponse(json.dumps(playlist.to_dict(), ensure_ascii=False, indent=2),
                                  media_type="application/json", headers=headers)
 
+    # --- History -------------------------------------------------------
+
+    @app.get("/api/history")
+    def history(playlist: str | None = None, limit: int = Query(100, ge=1, le=1000)):
+        """Every generated playlist, newest first, with per-track scrobbles since its creation."""
+        return reco().history.list(playlist, limit)
+
+    @app.get("/api/history/{entry_id}")
+    def history_entry(entry_id: int):
+        try:
+            return reco().history.get(entry_id)
+        except KeyError:
+            raise HTTPException(404, f"Unknown history entry {entry_id}")
+
     # --- Spotify ---------------------------------------------------------
 
     def spotify():

@@ -24,6 +24,8 @@ class FakeLastFM:
         # The user knows artists 1-5 of each genre and their first 3 tracks, plus a podcast.
         self.known_artists = [f"{g} {i}" for g in GENRES for i in range(1, 6)] + ["Some Podcast"]
         self.library = [(a, f"{a} song {j}") for a in self.known_artists for j in range(1, 4)]
+        self.scrobbles: list[tuple[int, str, str]] = []  # (ts, artist, title)
+        self.scrobble_requests: list[tuple[int, int]] = []
 
     def _track(self, artist, title, plays=10):
         return {"name": title, "artist": {"name": artist}, "playcount": str(plays), "url": f"https://last.fm/{artist}/{title}"}
@@ -44,6 +46,12 @@ class FakeLastFM:
     def user_recent_tracks(self, user, limit=200):
         self._count()
         return []
+
+    def user_scrobbles(self, user, start, end, max_pages=100):
+        self._count()
+        self.scrobble_requests.append((start, end))
+        return [{"name": t, "artist": {"#text": a}, "date": {"uts": str(ts)}}
+                for ts, a, t in self.scrobbles if start <= ts <= end]
 
     def track_user_playcount(self, user, artist, title):
         self._count()

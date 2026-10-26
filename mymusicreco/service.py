@@ -8,6 +8,7 @@ from datetime import date
 
 from .config import Settings
 from .db import Store
+from .history import History
 from .lastfm import LastFM
 from .models import Playlist
 from .playlists import MOODS, Generator
@@ -36,6 +37,7 @@ class Recommender:
         self._profile_at = 0.0
         self._lock = threading.Lock()
         self._spotify: Spotify | None = None
+        self.history = History(self.store, self.fm, self.user)
 
     def profile(self, refresh: bool = False) -> TasteProfile:
         with self._lock:
@@ -54,6 +56,8 @@ class Recommender:
                 return [Playlist.from_dict(p) for p in data]
         playlists = build()
         self.store.playlist_set(kind, period, [p.to_dict() for p in playlists])
+        for p in playlists:
+            self.history.record(p.to_dict(), period)
         return playlists
 
     def weekly(self, refresh: bool = False) -> Playlist:
