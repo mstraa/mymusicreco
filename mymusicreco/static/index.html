@@ -45,6 +45,14 @@
   #spotify a, #spotify button { font: inherit; font-size: 13px; color: var(--new); background: var(--new-soft); border: 0; border-radius: 6px; padding: 4px 10px; text-decoration: none; cursor: pointer; }
   .sync-result { font-size: 13px; color: var(--muted); margin: 0 0 10px; }
   .sync-result a { color: var(--new); }
+  details.card { padding: 0; }
+  details.card summary { padding: 12px 16px; cursor: pointer; display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: baseline; }
+  details.card summary .when { color: var(--muted); font-size: 13px; }
+  details.card summary .stats { grid-row: span 2; text-align: right; font-size: 13px; color: var(--muted); white-space: nowrap; }
+  details.card summary .stats b { color: var(--text); font-size: 15px; }
+  details.card ol { padding: 0 16px 12px; }
+  .plays { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+  .plays.hit { color: var(--new); font-weight: 600; }
 </style>
 </head>
 <body>
@@ -57,6 +65,7 @@
   <button data-tab="weekly" class="active">Découvertes de la semaine</button>
   <button data-tab="daily">Daily Mixes</button>
   <button data-tab="moods">Humeur / activité</button>
+  <button data-tab="history">Historique</button>
   <button data-tab="profile">Mon profil</button>
 </nav>
 <main id="content"></main>
@@ -138,6 +147,30 @@ const views = {
       `<button data-mood="${m.id}" style="${m.id === current ? "background:var(--accent);color:#fff" : ""}">${esc(m.name)}</button>`).join("")}</div>`;
     return picker + playlistCard(p, `moods:${current}`);
   },
+  async history(refresh, playlist) {
+    const all = await api("/api/history?limit=1000");
+    const ids = [...new Map(all.map(e => [e.playlist_id, e.name.replace(/ ·.*$/, "")])).entries()];
+    const entries = playlist ? all.filter(e => e.playlist_id === playlist) : all;
+    const picker = `<div class="actions">
+      <button data-history="" style="${!playlist ? "background:var(--accent);color:#fff" : ""}">Toutes</button>
+      ${ids.map(([id, name]) => `<button data-history="${esc(id)}" style="${id === playlist ? "background:var(--accent);color:#fff" : ""}">${esc(id.startsWith("daily-") ? id.replace("daily-", "Daily Mix ") : name)}</button>`).join("")}
+    </div>`;
+    if (!entries.length) return picker + `<p class="loading">Aucune playlist générée pour l'instant.</p>`;
+    const when = ts => new Date(ts * 1000).toLocaleString("fr-FR", { dateStyle: "full", timeStyle: "short" });
+    return picker + `<p class="desc">Écoutes Last.fm de chaque titre depuis la création de la playlist.</p>` + entries.map(e => `
+      <details class="card">
+        <summary>
+          <strong>${esc(e.name)}</strong>
+          <span class="stats"><b>${e.listened_tracks}/${e.track_count}</b> titres écoutés<br>${e.plays} écoute${e.plays > 1 ? "s" : ""}</span>
+          <span class="when">Créée le ${esc(when(e.created_at))}</span>
+        </summary>
+        <ol>${[...e.tracks].map(t => `
+          <li>
+            <span><a href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.title)}</a> <span class="artist">· ${esc(t.artist)}</span></span>
+            <span class="plays${t.plays ? " hit" : ""}">${t.plays} écoute${t.plays > 1 ? "s" : ""}</span>
+          </li>`).join("")}</ol>
+      </details>`).join("");
+  },
   async profile(refresh) {
     const p = await api(`/api/profile${refresh ? "?refresh=true" : ""}`);
     return `<section class="card">
@@ -151,13 +184,16 @@ const views = {
   },
 };
 
+let shown = 0;
 async function show(tab, refresh = false, mood = null) {
+  const seq = ++shown;  // a slower, older request must not overwrite the tab opened since
   document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
   content.innerHTML = `<p class="loading">${refresh ? "Génération" : "Chargement"} en cours… la première fois, l'analyse de Last.fm peut prendre une minute.</p>`;
   try {
-    content.innerHTML = await views[tab](refresh, mood);
+    const html = await views[tab](refresh, mood);
+    if (seq === shown) content.innerHTML = html;
   } catch (e) {
-    content.innerHTML = `<p class="error">Erreur : ${esc(e.message)}</p>`;
+    if (seq === shown) content.innerHTML = `<p class="error">Erreur : ${esc(e.message)}</p>`;
   }
 }
 
@@ -165,8 +201,9 @@ document.getElementById("tabs").addEventListener("click", e => {
   if (e.target.dataset.tab) show(e.target.dataset.tab);
 });
 content.addEventListener("click", e => {
-  const { refresh, mood, sync: target } = e.target.dataset;
+  const { refresh, mood, sync: target, history } = e.target.dataset;
   if (target) sync(target);
+  if (history !== undefined) show("history", false, history || null);
   if (mood) show("moods", false, mood);
   if (refresh) {
     const [tab, m] = refresh.split(":");
