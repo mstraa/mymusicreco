@@ -1,17 +1,19 @@
 """Command line:
 
 python -m mymusicreco [serve|profile|weekly|daily|mood NAME] [--refresh] [--export DIR]
+python -m mymusicreco history [PLAYLIST_ID | ENTRY_NUMBER | import DIR [--date YYYY-MM-DD]]
 python -m mymusicreco spotify [login|status|logout|sync [all|weekly|daily|mood|PLAYLIST_ID ...]] [--refresh]
 """
 
 import argparse
 import json
+from datetime import date, datetime
 from pathlib import Path
 
 from .config import get_settings
 from .models import Playlist
 from .playlists import MOODS
-from .service import Recommender, to_csv
+from .service import Recommender, day_period, to_csv, week_period
 from .spotify import SpotifyError
 
 
@@ -24,8 +26,8 @@ def print_playlist(p) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="mymusicreco")
-    parser.add_argument("command", choices=["serve", "profile", "weekly", "daily", "mood", "spotify"])
-    parser.add_argument("args", nargs="*", help="mood name, or spotify action and targets")
+    parser.add_argument("command", choices=["serve", "profile", "weekly", "daily", "mood", "history", "spotify"])
+    parser.add_argument("args", nargs="*", help="mood name, history entry, or spotify action and targets")
     parser.add_argument("--refresh", action="store_true", help="regenerate instead of using today's/this week's playlist")
     parser.add_argument("--export", metavar="DIR", help="also write each playlist as JSON and CSV into DIR")
     parser.add_argument("--host", default="127.0.0.1")
@@ -33,6 +35,7 @@ def main() -> None:
     parser.add_argument("--url", help="spotify login: the URL the browser was redirected to")
     parser.add_argument("--from", dest="from_dir", metavar="DIR",
                         help="spotify sync: send the JSON playlists exported in DIR instead of generating them")
+    parser.add_argument("--date", help="history import: creation date of the imported playlists (default: file date)")
     args = parser.parse_args()
 
     if args.command == "serve":
@@ -48,6 +51,9 @@ def main() -> None:
             raise SystemExit(f"Spotify : {exc}")
         except KeyError as exc:
             raise SystemExit(f"Playlist inconnue : {exc}")
+        return
+    if args.command == "history":
+        history_command(reco, args)
         return
     if args.command == "profile":
         print(json.dumps(reco.profile_summary(), ensure_ascii=False, indent=2))
@@ -71,6 +77,44 @@ def main() -> None:
             (out / f"{p.id}.json").write_text(json.dumps(p.to_dict(), ensure_ascii=False, indent=2))
             (out / f"{p.id}.csv").write_text(to_csv(p))
         print(f"Exporté dans {out}/")
+
+
+def _fmt_date(ts: float) -> str:
+    return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+
+
+def history_command(reco: Recommender, args) -> None:
+    if args.args and args.args[0] == "import":
+        if len(args.args) < 2:
+            raise SystemExit("history import needs a folder of exported JSON playlists")
+        for f in sorted(Path(args.args[1]).glob("*.json")):
+            data = json.loads(f.read_text())
+            created = (datetime.combine(date.fromisoformat(args.date), datetime.min.time()).timestamp()
+                       if args.date else f.stat().st_mtime)
+            day = date.fromtimestamp(created)
+            period = week_period(day) if data["id"] == "weekly" else day_period(day)
+            entry = reco.history.record(data, period, created)
+            print(f"#{entry} {data['name']} ({_fmt_date(created)})")
+        return
+
+    target = args.args[0] if args.args else None
+    if target and target.isdigit():
+        try:
+            e = reco.history.get(int(target))
+        except KeyError:
+            raise SystemExit(f"Entrée d'historique inconnue : {target}")
+        print(f"\n== #{e['id']} {e['name']} · créée le {_fmt_date(e['created_at'])} ==")
+        print(f"{e['listened_tracks']}/{e['track_count']} titres écoutés depuis, {e['plays']} écoutes")
+        for i, t in enumerate(e["tracks"], start=1):
+            print(f"{i:>3}. {t['plays']:>3}×  {t['artist']} — {t['title']}")
+        return
+
+    entries = reco.history.list(target)
+    if not entries:
+        print("Aucune playlist dans l'historique.")
+    for e in entries:
+        print(f"#{e['id']:<4} {_fmt_date(e['created_at'])}  {e['name']:<40} "
+              f"{e['listened_tracks']:>2}/{e['track_count']} titres écoutés, {e['plays']} écoutes")
 
 
 def spotify_command(reco: Recommender, args) -> None:

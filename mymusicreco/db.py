@@ -5,7 +5,7 @@ import time
 
 
 class Store:
-    """SQLite store for the API response cache, generated playlists and small settings (kv)."""
+    """SQLite store for the API response cache, generated playlists, their history, scrobbles and settings (kv)."""
 
     def __init__(self, path: str):
         self._conn = sqlite3.connect(path, check_same_thread=False)
@@ -29,8 +29,37 @@ class Store:
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    playlist_id TEXT NOT NULL,
+                    period TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    data TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS history_created ON history (created_at);
+                CREATE TABLE IF NOT EXISTS scrobbles (
+                    ts INTEGER NOT NULL,
+                    artist TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    PRIMARY KEY (ts, artist, title)
+                );
                 """
             )
+        self._backfill_history()
+
+    def _backfill_history(self) -> None:
+        """Playlists generated before the history existed become its first entries."""
+        with self._lock:
+            if self._conn.execute("SELECT 1 FROM history LIMIT 1").fetchone():
+                return
+            rows = self._conn.execute("SELECT period, created_at, data FROM playlists ORDER BY created_at").fetchall()
+            for period, created_at, data in rows:
+                for p in json.loads(data):
+                    self._conn.execute(
+                        "INSERT INTO history (playlist_id, period, created_at, data) VALUES (?, ?, ?, ?)",
+                        (p["id"], period, created_at, json.dumps(p)),
+                    )
+            self._conn.commit()
 
     def cache_get(self, key: str):
         with self._lock:
@@ -77,3 +106,56 @@ class Store:
             else:
                 self._conn.execute("INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)", (key, json.dumps(value)))
             self._conn.commit()
+
+    # --- history ------------------------------------------------------------
+
+    def history_add(self, playlist_id: str, period: str, created_at: float, data) -> int:
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO history (playlist_id, period, created_at, data) VALUES (?, ?, ?, ?)",
+                (playlist_id, period, created_at, json.dumps(data)),
+            )
+            self._conn.commit()
+            return cur.lastrowid
+
+    def history_list(self, playlist_id: str | None = None, limit: int = 100) -> list[dict]:
+        """Newest first."""
+        sql = "SELECT id, playlist_id, period, created_at, data FROM history"
+        args: tuple = ()
+        if playlist_id:
+            sql += " WHERE playlist_id = ?"
+            args = (playlist_id,)
+        with self._lock:
+            rows = self._conn.execute(sql + " ORDER BY created_at DESC, id DESC LIMIT ?", (*args, limit)).fetchall()
+        return [self._history_row(r) for r in rows]
+
+    def history_get(self, entry_id: int) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id, playlist_id, period, created_at, data FROM history WHERE id = ?", (entry_id,)
+            ).fetchone()
+        return self._history_row(row) if row else None
+
+    def history_oldest(self) -> float | None:
+        with self._lock:
+            row = self._conn.execute("SELECT MIN(created_at) FROM history").fetchone()
+        return row[0]
+
+    @staticmethod
+    def _history_row(row) -> dict:
+        return {"id": row[0], "playlist_id": row[1], "period": row[2], "created_at": row[3],
+                "playlist": json.loads(row[4])}
+
+    # --- scrobbles (normalized artist/title, see models.track_key) ------------
+
+    def scrobbles_add(self, rows: list[tuple[int, str, str]]) -> None:
+        with self._lock:
+            self._conn.executemany("INSERT OR IGNORE INTO scrobbles (ts, artist, title) VALUES (?, ?, ?)", rows)
+            self._conn.commit()
+
+    def scrobble_counts(self, since: float) -> dict[tuple[str, str], int]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT artist, title, COUNT(*) FROM scrobbles WHERE ts >= ? GROUP BY artist, title", (since,)
+            ).fetchall()
+        return {(a, t): n for a, t, n in rows}

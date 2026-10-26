@@ -74,6 +74,27 @@ Dans l'interface web, chaque playlist a un bouton « Envoyer vers Spotify », et
 Chaque titre est cherché sur Spotify (artiste + titre, versions « radio edit », « feat. »… tolérées) ; les correspondances
 sont gardées en cache 30 jours, et les titres introuvables sont listés.
 
+## Historique des playlists
+
+Chaque playlist générée est archivée (aussi quand tu la régénères, et même si Spotify la remplace ensuite) avec sa date
+de création et ses titres. Pour chaque titre, l'app compte tes scrobbles Last.fm **depuis la création de la playlist**,
+ce qui montre quelles recommandations tu as vraiment écoutées.
+
+- Interface web : onglet « Historique », filtrable par playlist ; ouvre une playlist pour voir les écoutes titre par titre.
+- En ligne de commande :
+
+```bash
+python -m mymusicreco history               # toutes les playlists archivées, titres écoutés et écoutes
+python -m mymusicreco history weekly        # seulement les découvertes de la semaine
+python -m mymusicreco history 12            # le détail titre par titre de l'entrée n° 12
+python -m mymusicreco history import exports/ --date 2026-10-26   # archive des JSON exportés auparavant
+```
+
+Les scrobbles sont lus via `user.getRecentTracks` à partir de la plus ancienne playlist archivée, puis seulement les
+nouveaux (avec 3 jours de marge pour les scrobbles envoyés en retard), au plus toutes les 5 minutes, et gardés dans SQLite.
+Les titres sont comparés après normalisation (« Radio Edit », « feat. »… ignorés). Les playlists déjà en base au moment
+de la mise à jour sont reprises dans l'historique automatiquement.
+
 ### API
 
 | Route | |
@@ -83,6 +104,8 @@ sont gardées en cache 30 jours, et les titres introuvables sont listés.
 | `GET /api/playlists/daily` | les daily mixes |
 | `GET /api/playlists/mood/{running,focus,chill}` | playlist d'humeur |
 | `GET /api/playlists/{id}/export?format=csv\|json` | export d'une playlist |
+| `GET /api/history?playlist=<id>&limit=100` | playlists archivées, avec les écoutes par titre depuis leur création |
+| `GET /api/history/{n}` | une entrée de l'historique |
 | `GET /api/spotify/status` | connexion Spotify |
 | `POST /api/spotify/sync/{all,weekly,daily,mood,<id>}` | envoi vers Spotify |
 
@@ -94,7 +117,7 @@ Toutes les routes de playlist acceptent `?refresh=true`.
 |---|---|---|
 | `LASTFM_API_KEY` | — | obligatoire |
 | `LASTFM_USER` | `ImRedCrow` | utilisateur Last.fm |
-| `MYMUSICRECO_DB` | `mymusicreco.db` | fichier SQLite (cache + playlists) |
+| `MYMUSICRECO_DB` | `mymusicreco.db` | fichier SQLite (cache, playlists, historique, scrobbles) |
 | `MYMUSICRECO_EXCLUDE_ARTISTS` | — | artistes à ignorer, séparés par des virgules |
 | `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` | — | pour l'export Spotify |
 | `SPOTIFY_REDIRECT_URI` | `http://127.0.0.1:8000/spotify/callback` | doit être déclarée dans l'app Spotify |
