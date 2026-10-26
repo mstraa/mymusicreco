@@ -85,7 +85,8 @@ def spotify(reco, server):
 
 def login(sp: Spotify) -> None:
     state = parse_qs(urlparse(sp.auth.authorize_url()).query)["state"][0]
-    sp.auth.complete_from_url(f"http://127.0.0.1:8000/spotify/callback?code=abc&state={state}")
+    # pasted from a chat, the & may come back HTML-escaped
+    sp.auth.complete_from_url(f"http://127.0.0.1:8000/spotify/callback?code=abc&amp;state={state}")
 
 
 def test_login_rejects_bad_state(spotify):

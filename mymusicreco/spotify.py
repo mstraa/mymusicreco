@@ -5,6 +5,7 @@ POST /me/playlists to create, PUT/POST /playlists/{id}/items to fill, search lim
 """
 
 import base64
+import html
 import secrets
 import threading
 import time
@@ -69,7 +70,7 @@ class SpotifyAuth:
 
     def complete_from_url(self, redirected_url: str) -> None:
         """For logins where the callback can't reach the app: paste the URL the browser ended on."""
-        query = parse_qs(urlparse(redirected_url.strip()).query)
+        query = parse_qs(urlparse(html.unescape(redirected_url.strip())).query)
         if "error" in query:
             raise SpotifyError(f"Spotify refused the login: {query['error'][0]}")
         if "code" not in query:
@@ -142,8 +143,8 @@ class Spotify:
             return cached.get("uri")
         uri = None
         for q in (f'track:"{track.title}" artist:"{track.artist}"', f"{track.artist} {track.title}"):
-            items = self.request("GET", "/search", params={"q": q, "type": "track", "limit": 10,
-                                                           "market": "from_token"})
+            # market=from_token would need the user-read-private scope
+            items = self.request("GET", "/search", params={"q": q, "type": "track", "limit": 10})
             uri = best_match(track, items.get("tracks", {}).get("items", []))
             if uri:
                 break
