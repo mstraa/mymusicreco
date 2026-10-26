@@ -33,7 +33,8 @@ NON_GENRE_TAGS = {
 NON_MUSIC_TAGS = {"podcast", "podcasts", "news", "spoken word", "talk", "comedy", "audiobook", "videos"}
 NON_MUSIC_NAME = re.compile(r"podcast|actus du jour|\bnews\b|radio show|audiobook", re.I)
 
-PERIOD_WEIGHTS = {"7day": 3.0, "1month": 2.0, "6month": 1.5, "overall": 1.0}
+# A week of scrobbles is too little to judge taste: the shortest window is a month.
+PERIOD_WEIGHTS = {"1month": 3.0, "3month": 2.0, "6month": 1.5, "overall": 1.0}
 
 
 def clean_tag(name: str) -> str:
@@ -107,7 +108,7 @@ def build_profile(fm: LastFM, user: str, library_pages: int = 5, tagged_artists:
     excluded_env = os.environ.get("MYMUSICRECO_EXCLUDE_ARTISTS", "")
     profile.excluded_artists = {norm(a) for a in excluded_env.split(",") if a.strip()}
 
-    # Artist affinity: recent listening counts more than all-time.
+    # Artist affinity: the last months count more than all-time.
     for period, weight in PERIOD_WEIGHTS.items():
         artists = fm.user_top_artists(user, period=period, limit=200)
         if not artists:
@@ -139,7 +140,7 @@ def build_profile(fm: LastFM, user: str, library_pages: int = 5, tagged_artists:
 
     # Favourite tracks, weighted the same way as artists.
     seen: dict[tuple[str, str], dict] = {}
-    for period in ("1month", "6month", "overall"):
+    for period in PERIOD_WEIGHTS:
         tracks = library if period == "overall" else fm.user_top_tracks(user, period=period, limit=300)
         if not tracks:
             continue
