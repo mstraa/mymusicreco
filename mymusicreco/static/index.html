@@ -41,12 +41,17 @@
   .tags span { background: var(--accent-soft); color: var(--accent); border-radius: 999px; padding: 2px 10px; font-size: 13px; }
   .loading { color: var(--muted); padding: 24px 0; }
   .error { color: var(--accent); }
+  #spotify { margin-top: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 14px; color: var(--muted); }
+  #spotify a, #spotify button { font: inherit; font-size: 13px; color: var(--new); background: var(--new-soft); border: 0; border-radius: 6px; padding: 4px 10px; text-decoration: none; cursor: pointer; }
+  .sync-result { font-size: 13px; color: var(--muted); margin: 0 0 10px; }
+  .sync-result a { color: var(--new); }
 </style>
 </head>
 <body>
 <header>
   <h1>MyMusicReco</h1>
   <p id="subtitle">Playlists construites à partir de ton historique Last.fm.</p>
+  <div id="spotify"></div>
 </header>
 <nav id="tabs">
   <button data-tab="weekly" class="active">Découvertes de la semaine</button>
@@ -59,8 +64,8 @@
 const content = document.getElementById("content");
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 
-async function api(path) {
-  const res = await fetch(path);
+async function api(path, method = "GET") {
+  const res = await fetch(path, { method });
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.statusText);
   return res.json();
 }
@@ -80,10 +85,41 @@ function playlistCard(p, refreshPath) {
       <a href="/api/playlists/${p.id}/export?format=csv">Export CSV</a>
       <a href="/api/playlists/${p.id}/export?format=json">Export JSON</a>
       <button data-refresh="${esc(refreshPath)}">Régénérer</button>
+      ${spotifyConnected ? `<button data-sync="${esc(p.id)}">Envoyer vers Spotify</button>` : ""}
     </div>
+    <p class="sync-result" id="sync-${esc(p.id)}" hidden></p>
     <ol>${items}</ol>
   </section>`;
 }
+
+let spotifyConnected = false;
+
+async function loadSpotify() {
+  const box = document.getElementById("spotify");
+  const s = await api("/api/spotify/status").catch(() => ({}));
+  spotifyConnected = !!s.connected;
+  if (!s.configured) box.innerHTML = "Spotify : ajoute SPOTIFY_CLIENT_ID et SPOTIFY_CLIENT_SECRET dans .env pour exporter.";
+  else if (!s.connected) box.innerHTML = `Spotify : non connecté <a href="/spotify/login">Connecter Spotify</a>`;
+  else box.innerHTML = `Spotify : connecté (${esc(s.user || "")}) <button data-sync="all">Tout envoyer vers Spotify</button> <span id="sync-all"></span>`;
+}
+
+async function sync(target) {
+  const out = document.getElementById(`sync-${target}`);
+  out.hidden = false;
+  out.textContent = "Envoi vers Spotify…";
+  try {
+    const results = await api(`/api/spotify/sync/${encodeURIComponent(target)}`, "POST");
+    out.innerHTML = results.map(r =>
+      `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.name)}</a> : ${r.matched}/${r.total} titres trouvés` +
+      (r.missing.length ? ` (introuvables : ${r.missing.map(esc).join(", ")})` : "")).join("<br>");
+  } catch (e) {
+    out.innerHTML = `<span class="error">Erreur : ${esc(e.message)}</span>`;
+  }
+}
+
+document.getElementById("spotify").addEventListener("click", e => {
+  if (e.target.dataset.sync) sync(e.target.dataset.sync);
+});
 
 const views = {
   async weekly(refresh) {
@@ -129,14 +165,15 @@ document.getElementById("tabs").addEventListener("click", e => {
   if (e.target.dataset.tab) show(e.target.dataset.tab);
 });
 content.addEventListener("click", e => {
-  const { refresh, mood } = e.target.dataset;
+  const { refresh, mood, sync: target } = e.target.dataset;
+  if (target) sync(target);
   if (mood) show("moods", false, mood);
   if (refresh) {
     const [tab, m] = refresh.split(":");
     show(tab, true, m || null);
   }
 });
-show("weekly");
+loadSpotify().finally(() => show("weekly"));
 </script>
 </body>
 </html>

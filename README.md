@@ -48,6 +48,32 @@ python -m mymusicreco mood running --refresh
 La première génération interroge beaucoup Last.fm (~30 à 60 s) ; les réponses sont gardées en cache dans
 SQLite (`mymusicreco.db`), donc les suivantes sont quasi instantanées.
 
+## Export vers Spotify
+
+Chaque playlist devient une playlist privée « MyMusicReco · … » dans ton compte Spotify. Elle est créée au premier envoi,
+puis son contenu est remplacé à chaque nouvel envoi (même lien, pas de doublons). Si tu la supprimes dans Spotify,
+elle est recréée au prochain envoi.
+
+1. Crée une app sur <https://developer.spotify.com/dashboard> (API : *Web API*) et ajoute la Redirect URI
+   `http://127.0.0.1:8000/spotify/callback`. Depuis février 2026, le propriétaire d'une app en mode développement doit avoir Spotify Premium.
+2. Mets `SPOTIFY_CLIENT_ID` et `SPOTIFY_CLIENT_SECRET` dans `.env`.
+3. Connecte-toi une fois :
+   - via l'interface web : `python -m mymusicreco serve`, puis « Connecter Spotify » ;
+   - ou en ligne de commande : `python -m mymusicreco spotify login`, ouvre l'adresse affichée, et si la page de retour
+     ne s'affiche pas (app web arrêtée), colle son adresse dans le terminal.
+4. Envoie les playlists :
+
+```bash
+python -m mymusicreco spotify sync              # toutes
+python -m mymusicreco spotify sync weekly daily-2 mood-running
+python -m mymusicreco spotify sync --from exports/   # les JSON déjà exportés, sans repasser par Last.fm
+python -m mymusicreco spotify status
+```
+
+Dans l'interface web, chaque playlist a un bouton « Envoyer vers Spotify », et « Tout envoyer » envoie tout.
+Chaque titre est cherché sur Spotify (artiste + titre, versions « radio edit », « feat. »… tolérées) ; les correspondances
+sont gardées en cache 30 jours, et les titres introuvables sont listés.
+
 ### API
 
 | Route | |
@@ -57,6 +83,8 @@ SQLite (`mymusicreco.db`), donc les suivantes sont quasi instantanées.
 | `GET /api/playlists/daily` | les daily mixes |
 | `GET /api/playlists/mood/{running,focus,chill}` | playlist d'humeur |
 | `GET /api/playlists/{id}/export?format=csv\|json` | export d'une playlist |
+| `GET /api/spotify/status` | connexion Spotify |
+| `POST /api/spotify/sync/{all,weekly,daily,mood,<id>}` | envoi vers Spotify |
 
 Toutes les routes de playlist acceptent `?refresh=true`.
 
@@ -68,6 +96,8 @@ Toutes les routes de playlist acceptent `?refresh=true`.
 | `LASTFM_USER` | `ImRedCrow` | utilisateur Last.fm |
 | `MYMUSICRECO_DB` | `mymusicreco.db` | fichier SQLite (cache + playlists) |
 | `MYMUSICRECO_EXCLUDE_ARTISTS` | — | artistes à ignorer, séparés par des virgules |
+| `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` | — | pour l'export Spotify |
+| `SPOTIFY_REDIRECT_URI` | `http://127.0.0.1:8000/spotify/callback` | doit être déclarée dans l'app Spotify |
 
 Les humeurs sont définies dans `mymusicreco/playlists.py` (`MOODS`) : un dictionnaire de tags pondérés et de tags à éviter,
 facile à étendre (« soirée », « voiture »…).
@@ -79,4 +109,4 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-Les tests utilisent un faux client Last.fm, sans réseau.
+Les tests utilisent de faux clients Last.fm et Spotify, sans réseau.

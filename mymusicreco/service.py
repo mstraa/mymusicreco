@@ -11,6 +11,7 @@ from .db import Store
 from .lastfm import LastFM
 from .models import Playlist
 from .playlists import MOODS, Generator
+from .spotify import Spotify, SpotifyAuth
 from .taste import TasteProfile, build_profile, summarize
 
 PROFILE_TTL = 6 * 3600
@@ -27,12 +28,14 @@ def day_period(today: date | None = None) -> str:
 
 class Recommender:
     def __init__(self, settings: Settings, fm: LastFM | None = None, store: Store | None = None):
+        self.settings = settings
         self.user = settings.user
         self.store = store or Store(settings.db_path)
         self.fm = fm or LastFM(settings.api_key, self.store)
         self._profile: TasteProfile | None = None
         self._profile_at = 0.0
         self._lock = threading.Lock()
+        self._spotify: Spotify | None = None
 
     def profile(self, refresh: bool = False) -> TasteProfile:
         with self._lock:
@@ -78,6 +81,23 @@ class Recommender:
                 if p.id == playlist_id:
                     return p
         raise KeyError(playlist_id)
+
+    def select(self, which: str = "all", refresh: bool = False) -> list[Playlist]:
+        """'all', 'weekly', 'daily', 'mood' (every mood), or a playlist id like 'daily-2' / 'mood-running'."""
+        if which == "all":
+            return [self.weekly(refresh), *self.daily(refresh), *(self.mood(m, refresh) for m in MOODS)]
+        if which == "daily":
+            return self.daily(refresh)
+        if which == "mood":
+            return [self.mood(m, refresh) for m in MOODS]
+        return [self.get(which, refresh)]
+
+    def spotify(self) -> Spotify:
+        if self._spotify is None:
+            s = self.settings
+            auth = SpotifyAuth(s.spotify_client_id, s.spotify_client_secret, s.spotify_redirect_uri, self.store)
+            self._spotify = Spotify(auth, self.store)
+        return self._spotify
 
 
 def to_csv(playlist: Playlist) -> str:
